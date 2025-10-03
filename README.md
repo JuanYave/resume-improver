@@ -15,6 +15,7 @@ A lightweight, AI-powered web application that analyzes résumés/CVs and provid
 - **Regional Adaptation**: Formatted for USA or LATAM (Mexico) standards
 - **Keyword Helper**: Compares résumé against job descriptions and suggests truthful integrations
 - **Diagnostic Scores**: 5-dimensional evaluation (Clarity, Impact, ATS Alignment, Readability, Role Fit)
+- **Safe Markdown Rendering**: Escapes unknown AI placeholders so React displays them as text without runtime warnings
 - **Privacy-Preserving**: No data storage, client-side processing where possible
 - **Bias-Aware**: Gender-neutral language, no demographic inferences
 
@@ -226,7 +227,7 @@ docker run -p 3000:3000 -e OPENAI_API_KEY=your-key resume-analyzer
 
 - **No Data Storage**: Résumés are not saved or logged
 - **No Tracking**: User sessions not tracked beyond rate limiting
-- **Input Sanitization**: Protects against prompt injection
+- **Input Sanitization**: Protects against prompt injection and escapes unrecognized HTML-like tags in generated markdown
 - **API Key Security**: Keys stored in environment variables only
 - **HTTPS**: Enforce SSL/TLS in production
 

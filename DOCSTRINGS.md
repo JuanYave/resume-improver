@@ -105,12 +105,14 @@ All code files follow **JSDoc** style documentation with TypeScript-specific ann
 - Purpose: Display analysis results in tabbed interface
 - Features: 3 tabs (Overview, Recommendations, Improved Resume)
 - Interactivity: Copy/download functionality
+- Safety: Sanitizes AI markdown to escape unknown HTML-like placeholders before rendering
 
 **Key documented elements:**
 - `ResultsDisplayProps` interface - Component props
 - `ResultsDisplay()` component - Main display component
 - `getScoreColor()` helper - Score badge styling
 - `getScoreLabel()` helper - Score text labels
+- `sanitizeMarkdownPlaceholders()` helper - Escapes unsupported tags to prevent React errors
 - `handleCopy()` handler - Clipboard functionality
 - `handleDownload()` handler - File download
 
@@ -191,7 +193,7 @@ All TypeScript types and interfaces are well-documented with:
 |------|-----------|-----------|------------|------------|
 | `/src/app/api/analyze/route.ts` | ✅ 1/1 | ✅ 2/2 | - | - |
 | `/src/components/ResumeInput.tsx` | ✅ 1/1 | ✅ 1/1 | ✅ 1/1 | ✅ 1/1 |
-| `/src/components/ResultsDisplay.tsx` | ✅ 5/5 | - | ✅ 1/1 | ✅ 1/1 |
+| `/src/components/ResultsDisplay.tsx` | ✅ 6/6 | ✅ 1/1 | ✅ 1/1 | ✅ 1/1 |
 | `/src/app/page.tsx` | ✅ 2/2 | - | - | ✅ 1/1 |
 | `/src/types/index.ts` | - | - | ✅ All | - |
 

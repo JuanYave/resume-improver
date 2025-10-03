@@ -60,6 +60,7 @@ The corrected v2.0 prompt addressed **17 issues** from the original:
 | Missing input validation | ✅ Fixed | 100-15000 char limits, enum validation |
 | Perspective naming mismatch | ✅ Fixed | Standardized snake_case |
 | Changelog line mapping unclear | ✅ Fixed | Section-based with change types |
+| Unrecognized HTML tags in markdown | ✅ Fixed | Escaped placeholder tags to prevent React warnings |
 | Keyword helper null handling | ✅ Fixed | Conditional structure when JD missing |
 | Missing error codes | ✅ Fixed | Structured error system (E001-E007) |
 | Security gaps | ✅ Fixed | Rate limiting, sanitization guidance |
@@ -72,20 +73,17 @@ The corrected v2.0 prompt addressed **17 issues** from the original:
 
 - [x] **Multi-perspective analysis** (11 professional lenses)
 - [x] **Diagnostic scoring** (5 dimensions: clarity, impact, ATS, readability, role fit)
-- [x] **Keyword helper** (JD comparison, gap analysis, integration suggestions)
 - [x] **Bilingual output** (English/Spanish)
 - [x] **Regional formatting** (USA/LATAM conventions)
 - [x] **Improved resume generation** (ATS-compliant markdown)
 - [x] **Changelog tracking** (what changed and why)
 - [x] **Copy/download functionality** (export improved resume)
 - [x] **Input validation** (character limits, required fields)
+- [x] **Safe markdown rendering** that escapes AI placeholder tags before React renders them
 - [x] **Error handling** (structured error codes)
 - [x] **Responsive UI** (mobile-friendly design)
 
 ---
-
-## 🧪 Test Results
-
 ### Test Case 1: Minimal Technical Resume ✅
 
 **Input:** Junior developer resume with vague bullets

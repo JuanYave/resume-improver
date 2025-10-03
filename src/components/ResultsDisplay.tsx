@@ -82,6 +82,7 @@ type TabId = 'overview' | 'recommendations' | 'improved' | 'canva';
  * - Expandable sections for strengths, gaps, and risks
  * - Keyword analysis when job description provided
  * - Copy to clipboard and download functionality for improved résumé
+ * - Safe markdown rendering that escapes unsupported AI placeholders before React renders them
  * 
  * @component
  * @param {ResultsDisplayProps} props - Component props
