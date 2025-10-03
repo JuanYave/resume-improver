@@ -12,7 +12,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Download, Copy, CheckCircle, AlertCircle, TrendingUp, FileText } from 'lucide-react';
+import { Download, Copy, CheckCircle, AlertCircle, TrendingUp, FileText, Sparkles } from 'lucide-react';
 import Markdown from 'markdown-to-jsx';
 import { useApp } from '@/contexts/AppContext';
 import type { AnalysisOutput, CanvaGuide, CanvaGuideSection } from '@/types';
@@ -70,6 +70,14 @@ function sanitizeMarkdownPlaceholders(markdown: string): string {
 interface ResultsDisplayProps {
   /** Analysis output from the API */
   result: AnalysisOutput;
+  /** Original resume text */
+  resumeText: string;
+  /** Provider used for analysis */
+  provider: string;
+  /** Model used for analysis */
+  model: string;
+  /** Optional API key */
+  apiKey?: string | null;
 }
 
 type TabId = 'overview' | 'recommendations' | 'improved' | 'canva';
@@ -91,7 +99,7 @@ type TabId = 'overview' | 'recommendations' | 'improved' | 'canva';
  * @example
  * ```
  */
-export default function ResultsDisplay({ result }: ResultsDisplayProps) {
+export default function ResultsDisplay({ result, resumeText, provider, model, apiKey }: ResultsDisplayProps) {
   const { t } = useApp();
 
   const [activeTab, setActiveTab] = useState<TabId>('overview');
@@ -100,8 +108,14 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
   const [canvaLoading, setCanvaLoading] = useState(false);
   const [canvaError, setCanvaError] = useState<string | null>(null);
   const [copiedSection, setCopiedSection] = useState<number | null>(null);
+  const [rewriteLoading, setRewriteLoading] = useState(false);
+  const [rewriteError, setRewriteError] = useState<string | null>(null);
+  const [rewriteResult, setRewriteResult] = useState<{ improved_resume_markdown: string; changelog: any[]; next_steps: string[] } | null>(
+    result.improved_resume_markdown ? { improved_resume_markdown: result.improved_resume_markdown, changelog: result.changelog || [], next_steps: result.next_steps || [] } : null
+  );
 
-  const hasCanvaTab = Boolean(result.improved_resume_markdown?.trim());
+  const hasImprovedResume = Boolean(rewriteResult?.improved_resume_markdown?.trim());
+  const hasCanvaTab = hasImprovedResume;
 
   const tabs = useMemo(() => {
     const base: Array<{ id: TabId; label: string }> = [
@@ -129,8 +143,9 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
   }, [result.diagnostic.scores, t]);
 
   const safeImprovedMarkdown = useMemo(() => {
-    return sanitizeMarkdownPlaceholders(result.improved_resume_markdown);
-  }, [result.improved_resume_markdown]);
+    if (!rewriteResult?.improved_resume_markdown) return '';
+    return sanitizeMarkdownPlaceholders(rewriteResult.improved_resume_markdown);
+  }, [rewriteResult?.improved_resume_markdown]);
 
   const getScoreColor = (score: number) => {
     if (score >= 8) return 'bg-green-100 text-green-800';
@@ -151,8 +166,9 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
    * Shows "Copied!" feedback for 2 seconds
    */
   const handleCopy = async () => {
+    if (!rewriteResult?.improved_resume_markdown) return;
     try {
-      await navigator.clipboard.writeText(result.improved_resume_markdown);
+      await navigator.clipboard.writeText(rewriteResult.improved_resume_markdown);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
@@ -165,7 +181,8 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
    * Creates blob and triggers browser download
    */
   const handleDownload = () => {
-    const blob = new Blob([result.improved_resume_markdown], { type: 'text/markdown' });
+    if (!rewriteResult?.improved_resume_markdown) return;
+    const blob = new Blob([rewriteResult.improved_resume_markdown], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -174,6 +191,46 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  /**
+   * Generates improved resume (lazy loaded)
+   */
+  const generateImprovedResume = async () => {
+    if (rewriteResult) return; // Already generated
+    
+    setRewriteLoading(true);
+    setRewriteError(null);
+
+    try {
+      const response = await fetch('/api/rewrite', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          resume_text: resumeText,
+          analysis: result,
+          perspective: result.meta.perspective,
+          language: result.meta.language,
+          region: result.meta.region,
+          provider,
+          model,
+          provider_api_key: apiKey,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate improved resume');
+      }
+
+      const data = await response.json();
+      setRewriteResult(data);
+    } catch (err) {
+      setRewriteError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setRewriteLoading(false);
+    }
   };
 
   /**
@@ -192,7 +249,7 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          improved_resume_markdown: result.improved_resume_markdown,
+          improved_resume_markdown: rewriteResult?.improved_resume_markdown,
           language: result.meta.language,
           provider: 'gemini', // Use Gemini for faster/cheaper response
           model: 'gemini-2.5-flash',
@@ -472,10 +529,11 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
           </div>
 
           {/* Changelog */}
+          {rewriteResult?.changelog && rewriteResult.changelog.length > 0 && (
           <div className="card dark:bg-gray-800 dark:border-gray-700">
             <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">{t('results.changelog')}</h3>
             <div className="space-y-3">
-              {result.changelog.map((change, idx) => (
+              {rewriteResult.changelog.map((change, idx) => (
                 <div key={idx} className="border-l-4 border-primary-500 dark:border-primary-400 pl-4 py-2">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-sm font-medium text-gray-800 dark:text-gray-200 capitalize">{change.section}</span>
@@ -488,12 +546,14 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
               ))}
             </div>
           </div>
+          )}
 
           {/* Next Steps */}
+          {rewriteResult?.next_steps && rewriteResult.next_steps.length > 0 && (
           <div className="card bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
             <h3 className="text-lg font-semibold mb-4 text-green-900 dark:text-green-300">{t('results.nextsteps')}</h3>
             <ul className="space-y-2">
-              {result.next_steps.map((step, idx) => (
+              {rewriteResult.next_steps.map((step, idx) => (
                 <li key={idx} className="flex items-start">
                   <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 mr-2 mt-0.5" />
                   <span className="text-sm text-green-900 dark:text-green-200">{step}</span>
@@ -501,43 +561,90 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
               ))}
             </ul>
           </div>
+          )}
         </div>
       )}
 
       {/* Improved Resume Tab */}
       {activeTab === 'improved' && (
         <div className="space-y-4">
-          {/* Action Buttons */}
-          <div className="flex gap-3">
-            <button onClick={handleCopy} className="btn-primary flex items-center">
-              {copied ? (
-                <>
-                  <CheckCircle className="w-4 h-4 mr-2" />
-                  {t('results.copied')}
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4 mr-2" />
-                  {t('results.copy')}
-                </>
-              )}
-            </button>
-            <button onClick={handleDownload} className="btn-secondary flex items-center">
-              <Download className="w-4 h-4 mr-2" />
-              {t('results.download')}
-            </button>
-          </div>
+          {/* Generate Button (shown when not yet generated) */}
+          {!rewriteResult && !rewriteLoading && !rewriteError && (
+            <div className="card dark:bg-gray-800 dark:border-gray-700 text-center py-12">
+              <Sparkles className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                {t('results.improved.generate.title')}
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
+                {t('results.improved.generate.subtitle')}
+              </p>
+              <button
+                onClick={generateImprovedResume}
+                className="btn-primary px-8 py-3 text-lg font-semibold"
+              >
+                {t('results.improved.generate.button')}
+              </button>
+            </div>
+          )}
 
-          {/* Resume Preview */}
-          <div className="card dark:bg-gray-800 dark:border-gray-700">
-            <div className="flex items-center mb-4">
-              <FileText className="w-5 h-5 mr-2 text-primary-600 dark:text-primary-400" />
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{t('results.improved')}</h3>
+          {rewriteLoading && (
+            <div className="flex flex-col items-center justify-center py-12">
+              <svg className="animate-spin h-12 w-12 text-primary-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <p className="text-gray-600 dark:text-gray-300 font-medium">{t('results.improved.loading')}</p>
             </div>
-            <div className="prose prose-sm max-w-none bg-gray-50 dark:bg-gray-900 p-6 rounded-lg dark:prose-invert">
-              <Markdown>{safeImprovedMarkdown}</Markdown>
+          )}
+
+          {rewriteError && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+              <p className="text-red-800 dark:text-red-400 font-medium">{t('results.error')}</p>
+              <p className="text-red-600 dark:text-red-300 text-sm mt-1">{rewriteError}</p>
+              <button
+                onClick={generateImprovedResume}
+                className="btn-primary mt-4"
+              >
+                {t('results.improved.retry')}
+              </button>
             </div>
-          </div>
+          )}
+
+          {rewriteResult && (
+            <>
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button onClick={handleCopy} className="btn-primary flex items-center">
+                  {copied ? (
+                    <>
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      {t('results.copied')}
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4 mr-2" />
+                      {t('results.copy')}
+                    </>
+                  )}
+                </button>
+                <button onClick={handleDownload} className="btn-secondary flex items-center">
+                  <Download className="w-4 h-4 mr-2" />
+                  {t('results.download')}
+                </button>
+              </div>
+
+              {/* Resume Preview */}
+              <div className="card dark:bg-gray-800 dark:border-gray-700">
+                <div className="flex items-center mb-4">
+                  <FileText className="w-5 h-5 mr-2 text-primary-600 dark:text-primary-400" />
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{t('results.improved')}</h3>
+                </div>
+                <div className="prose prose-sm max-w-none bg-gray-50 dark:bg-gray-900 p-6 rounded-lg dark:prose-invert">
+                  <Markdown>{safeImprovedMarkdown}</Markdown>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 

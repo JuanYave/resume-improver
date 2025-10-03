@@ -130,6 +130,11 @@ const translations: Record<UILanguage, Record<string, string>> = {
     'results.score.good': 'Bueno',
     'results.score.fair': 'Aceptable',
     'results.score.poor': 'Deficiente',
+    'results.improved.generate.title': 'Generar Currículum Mejorado',
+    'results.improved.generate.subtitle': 'Haz clic en el botón para crear una versión optimizada de tu currículum basada en el análisis.',
+    'results.improved.generate.button': 'Generar Currículum Mejorado',
+    'results.improved.loading': 'Generando currículum mejorado...',
+    'results.improved.retry': 'Reintentar',
     
     // Canva Export
     'canva.title': 'Guía de Diseño para Canva',
@@ -271,6 +276,11 @@ const translations: Record<UILanguage, Record<string, string>> = {
     'results.score.good': 'Good',
     'results.score.fair': 'Fair',
     'results.score.poor': 'Poor',
+    'results.improved.generate.title': 'Generate Improved Resume',
+    'results.improved.generate.subtitle': 'Click the button below to create an optimized version of your resume based on the analysis.',
+    'results.improved.generate.button': 'Generate Improved Resume',
+    'results.improved.loading': 'Generating improved resume...',
+    'results.improved.retry': 'Retry',
     
     // Canva Export
     'canva.title': 'Canva Design Guide',

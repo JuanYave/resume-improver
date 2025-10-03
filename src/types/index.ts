@@ -33,6 +33,20 @@ export interface AnalysisInput {
   };
 }
 
+export interface AnalysisPhaseResult {
+  meta: AnalysisOutput['meta'];
+  extracted_profile: AnalysisOutput['extracted_profile'];
+  diagnostic: AnalysisOutput['diagnostic'];
+  keyword_helper: AnalysisOutput['keyword_helper'];
+  recommendations: AnalysisOutput['recommendations'];
+}
+
+export interface RewritePhaseResult {
+  improved_resume_markdown: AnalysisOutput['improved_resume_markdown'];
+  changelog: AnalysisOutput['changelog'];
+  next_steps: AnalysisOutput['next_steps'];
+}
+
 export interface ErrorDetail {
   code: string;
   severity: 'critical' | 'warning' | 'info';
@@ -107,15 +121,15 @@ export interface AnalysisOutput {
       style: string;
     };
   };
-  improved_resume_markdown: string;
-  changelog: Array<{
+  improved_resume_markdown?: string;
+  changelog?: Array<{
     section: string;
     change_type: 'added' | 'removed' | 'modified' | 'restructured';
     description: string;
     original?: string;
     improved?: string;
   }>;
-  next_steps: string[];
+  next_steps?: string[];
 }
 
 export interface PerspectiveOption {

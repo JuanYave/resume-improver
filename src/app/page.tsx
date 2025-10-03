@@ -26,67 +26,6 @@ import Header from '@/components/Header';
 import { useApp } from '@/contexts/AppContext';
 import type { AnalysisInput, AnalysisOutput } from '@/types';
 
-function cleanModelJson(text: string): string {
-  let cleaned = text.trim();
-
-  if (cleaned.startsWith('```json')) {
-    cleaned = cleaned.slice(7);
-  } else if (cleaned.startsWith('```')) {
-    cleaned = cleaned.slice(3);
-  }
-
-  if (cleaned.endsWith('```')) {
-    cleaned = cleaned.slice(0, -3);
-  }
-
-  return cleaned.trim();
-}
-
-async function readStreamToString(stream: ReadableStream<Uint8Array>): Promise<string> {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let result = '';
-
-  try {
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) {
-        break;
-      }
-
-      if (value) {
-        result += decoder.decode(value, { stream: true });
-      }
-    }
-
-    result += decoder.decode();
-  } finally {
-    reader.releaseLock();
-  }
-
-  return result;
-}
-
-function parseAnalysisOutputPayload(raw: string): AnalysisOutput {
-  const trimmed = raw.trim();
-
-  if (!trimmed) {
-    throw new Error('Empty response from AI');
-  }
-
-  try {
-    return JSON.parse(trimmed) as AnalysisOutput;
-  } catch (initialError) {
-    try {
-      const cleaned = cleanModelJson(trimmed);
-      return JSON.parse(cleaned) as AnalysisOutput;
-    } catch (secondaryError) {
-      throw initialError instanceof Error ? initialError : secondaryError;
-    }
-  }
-}
-
 async function extractErrorMessage(response: Response): Promise<string> {
   const bodyText = await response.text();
 
@@ -158,7 +97,7 @@ export default function Home() {
     setResult(null);
 
     try {
-      const response = await fetch(`/api/analyze?stream=${input.provider === 'gemini' ? 'true' : 'false'}`, {
+      const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -173,17 +112,8 @@ export default function Home() {
         throw new Error(await extractErrorMessage(response));
       }
 
-      let payload: AnalysisOutput;
-
-      if (response.body && response.headers.get('X-Analysis-Provider') === 'gemini') {
-        const rawText = await readStreamToString(response.body);
-        payload = parseAnalysisOutputPayload(rawText);
-      } else {
-        payload = await response.json();
-      }
-
-      const data: AnalysisOutput = payload;
-      setResult(data);
+      const payload: AnalysisOutput = await response.json();
+      setResult(payload);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -260,7 +190,15 @@ export default function Home() {
               </div>
             )}
 
-            {result && <ResultsDisplay result={result} />}
+            {result && (
+              <ResultsDisplay 
+                result={result} 
+                resumeText={input.resume_text}
+                provider={input.provider}
+                model={input.model}
+                apiKey={input.provider_api_key}
+              />
+            )}
           </div>
         </div>
 
