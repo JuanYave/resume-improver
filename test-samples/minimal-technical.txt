@@ -1,0 +1,15 @@
+John Doe
+Software Engineer
+
+Experience:
+Acme Corp (2020-2023)
+- Worked on backend systems
+- Fixed bugs
+- Attended meetings
+- Helped with deployments
+
+Education:
+BS Computer Science
+State University, 2020
+
+Skills: Python, JavaScript, SQL

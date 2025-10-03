@@ -1,0 +1,22 @@
+María García
+Ingeniera de Software
+
+EXPERIENCIA PROFESIONAL
+
+Tech Solutions, Desarrolladora Full Stack (Ene 2019 - Presente)
+- Desarrollé aplicaciones web con React y Node.js
+- Trabajé con el equipo de producto
+- Resolví problemas técnicos
+- Participé en reuniones de sprint
+
+Innovatech, Desarrolladora Junior (2017-2018)
+- Apoyé al equipo de desarrollo
+- Escribí código en JavaScript
+- Hice pruebas de software
+
+EDUCACIÓN
+Ingeniería en Sistemas Computacionales
+Universidad Tecnológica de México, 2017
+
+HABILIDADES
+React, Node.js, Python, MongoDB, Git, Scrum
