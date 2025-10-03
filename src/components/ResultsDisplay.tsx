@@ -11,11 +11,57 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Download, Copy, CheckCircle, AlertCircle, TrendingUp, FileText } from 'lucide-react';
 import Markdown from 'markdown-to-jsx';
 import { useApp } from '@/contexts/AppContext';
 import type { AnalysisOutput } from '@/types';
+
+const ALLOWED_HTML_TAGS = new Set([
+  'a',
+  'blockquote',
+  'br',
+  'code',
+  'div',
+  'em',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'img',
+  'li',
+  'ol',
+  'p',
+  'pre',
+  'span',
+  'strong',
+  'table',
+  'tbody',
+  'td',
+  'th',
+  'thead',
+  'tr',
+  'ul',
+]);
+
+/**
+ * Escapes AI-generated placeholder tags (e.g., <porcentaje>) so they render safely as text.
+ * Known HTML tags remain untouched to preserve intentional markup.
+ */
+function sanitizeMarkdownPlaceholders(markdown: string): string {
+  return markdown.replace(/<\/?([a-zA-Z][\w-]*)([^>]*)>/g, (match) => {
+    const tagNameMatch = match.match(/^<\/?([a-zA-Z][\w-]*)/);
+    const tagName = tagNameMatch?.[1]?.toLowerCase();
+
+    if (tagName && ALLOWED_HTML_TAGS.has(tagName)) {
+      return match;
+    }
+
+    return match.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  });
+}
 
 /**
  * Props for the ResultsDisplay component
@@ -25,6 +71,8 @@ interface ResultsDisplayProps {
   /** Analysis output from the API */
   result: AnalysisOutput;
 }
+
+type TabId = 'overview' | 'recommendations' | 'improved' | 'canva';
 
 /**
  * Results Display Component
@@ -40,37 +88,57 @@ interface ResultsDisplayProps {
  * @returns {JSX.Element} Rendered results display with tabs
  * 
  * @example
- * ```tsx
- * <ResultsDisplay result={analysisOutput} />
  * ```
  */
 export default function ResultsDisplay({ result }: ResultsDisplayProps) {
   const { t } = useApp();
+
+  const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'recommendations' | 'improved' | 'canva'>('overview');
   const [canvaGuide, setCanvaGuide] = useState<any>(null);
   const [canvaLoading, setCanvaLoading] = useState(false);
   const [canvaError, setCanvaError] = useState<string | null>(null);
   const [copiedSection, setCopiedSection] = useState<number | null>(null);
 
-  /**
-   * Determines background and text color based on score value
-   * @param {number} score - Score from 0-10
-   * @returns {string} Tailwind CSS classes for score badge
-   */
-  const getScoreColor = (score: number): string => {
-    if (score >= 9) return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
-    if (score >= 7) return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
-    if (score >= 4) return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300';
-    return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
+  const hasCanvaTab = Boolean(result.improved_resume_markdown?.trim());
+
+  const tabs = useMemo(() => {
+    const base: Array<{ id: TabId; label: string }> = [
+      { id: 'overview', label: t('results.tab.overview') },
+      { id: 'recommendations', label: t('results.tab.recommendations') },
+      { id: 'improved', label: t('results.tab.improved') },
+      { id: 'canva', label: t('results.tab.canva') },
+    ];
+
+    return hasCanvaTab ? base : base.filter((tab) => tab.id !== 'canva');
+  }, [t, hasCanvaTab]);
+
+  useEffect(() => {
+    if (!hasCanvaTab && activeTab === 'canva') {
+      setActiveTab('overview');
+    }
+  }, [hasCanvaTab, activeTab]);
+
+  const overviewScores = useMemo(() => {
+    return Object.entries(result.diagnostic.scores).map(([key, value]) => ({
+      key,
+      value,
+      label: t(`results.scores.${key}`),
+    }));
+  }, [result.diagnostic.scores, t]);
+
+  const safeImprovedMarkdown = useMemo(() => {
+    return sanitizeMarkdownPlaceholders(result.improved_resume_markdown);
+  }, [result.improved_resume_markdown]);
+
+  const getScoreColor = (score: number) => {
+    if (score >= 8) return 'bg-green-100 text-green-800';
+    if (score >= 6) return 'bg-blue-100 text-blue-800';
+    if (score >= 4) return 'bg-yellow-100 text-yellow-800';
+    return 'bg-red-100 text-red-800';
   };
 
-  /**
-   * Converts numeric score to text label
-   * @param {number} score - Score from 0-10
-   * @returns {string} Score label (Poor/Fair/Good/Excellent)
-   */
-  const getScoreLabel = (score: number): string => {
+  const getScoreLabel = (score: number) => {
     if (score >= 9) return t('results.score.excellent');
     if (score >= 7) return t('results.score.good');
     if (score >= 4) return t('results.score.fair');
@@ -82,9 +150,13 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
    * Shows "Copied!" feedback for 2 seconds
    */
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(result.improved_resume_markdown);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(result.improved_resume_markdown);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy improved resume', error);
+    }
   };
 
   /**
@@ -151,8 +223,8 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
   /**
    * Handle tab change
    */
-  const handleTabChange = (tabId: string) => {
-    setActiveTab(tabId as any);
+  const handleTabChange = (tabId: TabId) => {
+    setActiveTab(tabId);
   };
 
   /**
@@ -240,12 +312,7 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
       {/* Tabs */}
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex space-x-8">
-          {[
-            { id: 'overview', label: t('results.tab.overview') },
-            { id: 'recommendations', label: t('results.tab.recommendations') },
-            { id: 'improved', label: t('results.tab.improved') },
-            { id: 'canva', label: t('results.tab.canva') },
-          ].map((tab) => (
+          {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => handleTabChange(tab.id)}
@@ -272,15 +339,15 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">{result.diagnostic.score_explanation}</p>
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              {Object.entries(result.diagnostic.scores).map(([key, value]) => (
-                <div key={key} className="text-center">
-                  <div className={`score-badge ${getScoreColor(value)} mb-2`}>
-                    {value.toFixed(1)}
+              {overviewScores.map((score) => (
+                <div key={score.key} className="text-center">
+                  <div className={`score-badge ${getScoreColor(score.value)} mb-2`}>
+                    {score.value.toFixed(1)}
                   </div>
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">
-                    {key.replace('_', ' ')}
+                    {score.key.replace('_', ' ')}
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{getScoreLabel(value)}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{getScoreLabel(score.value)}</p>
                 </div>
               ))}
             </div>
@@ -467,14 +534,14 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{t('results.improved')}</h3>
             </div>
             <div className="prose prose-sm max-w-none bg-gray-50 dark:bg-gray-900 p-6 rounded-lg dark:prose-invert">
-              <Markdown>{result.improved_resume_markdown}</Markdown>
+              <Markdown>{safeImprovedMarkdown}</Markdown>
             </div>
           </div>
         </div>
       )}
 
       {/* Canva Export Tab */}
-      {activeTab === 'canva' && (
+      {activeTab === 'canva' && hasCanvaTab && (
         <div className="space-y-6">
           {/* Generate Button (shown when not yet generated) */}
           {!canvaGuide && !canvaLoading && !canvaError && (
