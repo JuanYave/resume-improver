@@ -78,20 +78,22 @@ const PROVIDERS: ProviderOption[] = [
     label: 'Google Gemini',
     description: 'Gemini 2.5 Flash/Pro con salida estructurada JSON',
   },
-  {
-    value: 'openai',
-    label: 'OpenAI',
-    description: 'GPT-5 (beta)',
-  },
+  // Temporarily disabled - too slow (>30s response time)
+  // {
+  //   value: 'openai',
+  //   label: 'OpenAI',
+  //   description: 'GPT-5 (beta)',
+  // },
 ];
 
 const MODEL_OPTIONS: ModelOption[] = [
-  {
-    value: 'gpt-5-mini',
-    label: 'GPT-5 Mini (OpenAI)',
-    provider: 'openai',
-    description: 'Modelo beta más reciente con API Responses',
-  },
+  // Temporarily disabled - too slow (>30s response time)
+  // {
+  //   value: 'gpt-5-mini',
+  //   label: 'GPT-5 Mini (OpenAI)',
+  //   provider: 'openai',
+  //   description: 'Modelo beta más reciente con API Responses',
+  // },
   {
     value: 'gemini-2.5-flash',
     label: 'Gemini 2.5 Flash (Google)',
