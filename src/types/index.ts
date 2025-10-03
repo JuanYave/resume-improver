@@ -136,3 +136,24 @@ export interface ModelOption {
   provider: Provider;
   description?: string;
 }
+
+export interface CanvaGuideSection {
+  name: string;
+  content: string;
+  placement: string;
+  fontSize: string;
+}
+
+export interface CanvaGuide {
+  sections: CanvaGuideSection[];
+  templateKeywords: string[];
+  colorScheme: {
+    primary: string;
+    secondary: string;
+    accent?: string;
+  };
+  fontRecommendations: {
+    heading: string;
+    body: string;
+  };
+}

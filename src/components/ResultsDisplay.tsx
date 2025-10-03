@@ -15,7 +15,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Download, Copy, CheckCircle, AlertCircle, TrendingUp, FileText } from 'lucide-react';
 import Markdown from 'markdown-to-jsx';
 import { useApp } from '@/contexts/AppContext';
-import type { AnalysisOutput } from '@/types';
+import type { AnalysisOutput, CanvaGuide, CanvaGuideSection } from '@/types';
 
 const ALLOWED_HTML_TAGS = new Set([
   'a',
@@ -96,7 +96,7 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
 
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [copied, setCopied] = useState(false);
-  const [canvaGuide, setCanvaGuide] = useState<any>(null);
+  const [canvaGuide, setCanvaGuide] = useState<CanvaGuide | null>(null);
   const [canvaLoading, setCanvaLoading] = useState(false);
   const [canvaError, setCanvaError] = useState<string | null>(null);
   const [copiedSection, setCopiedSection] = useState<number | null>(null);
@@ -203,7 +203,7 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
         throw new Error('Failed to generate Canva guide');
       }
 
-      const data = await response.json();
+      const data: CanvaGuide = await response.json();
       setCanvaGuide(data);
     } catch (err) {
       setCanvaError(err instanceof Error ? err.message : 'An error occurred');
@@ -614,7 +614,7 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
               </div>
 
               {/* Sections */}
-              {canvaGuide.sections.map((section: any, idx: number) => (
+              {canvaGuide.sections.map((section: CanvaGuideSection, idx: number) => (
                 <div key={idx} className="card dark:bg-gray-800 dark:border-gray-700">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white">

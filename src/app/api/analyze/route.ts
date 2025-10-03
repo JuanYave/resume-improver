@@ -172,8 +172,6 @@ interface CompletionContext {
 
 /**
  * Calls legacy Chat Completions API for GPT-3.5/GPT-4 Turbo models.
- * @param {CompletionContext} params - Model id and composed user message
- * @returns {Promise<string | null>} JSON string returned by the model
  */
 async function getChatCompletionsResult({
   model,
@@ -185,13 +183,11 @@ async function getChatCompletionsResult({
     model,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: userMessage },
     ],
     temperature: 0.3,
     max_tokens: 8000,
     response_format: { type: 'json_object' },
   });
-
   const finishReason = completion.choices[0]?.finish_reason;
   console.log(`OpenAI finish_reason: ${finishReason}`);
   
@@ -334,6 +330,70 @@ async function runGeminiAnalysis(
   return typeof text === 'string' ? text : null;
 }
 
+async function streamGeminiAnalysis(
+  model: string,
+  userMessage: string,
+  apiKey?: string | null
+): Promise<ReadableStream<Uint8Array>> {
+  const client = getGeminiClient(apiKey);
+  const combinedPrompt = `${SYSTEM_PROMPT}\n\n${userMessage}`;
+  const streamIterator = await client.models.generateContentStream({
+    model,
+    contents: combinedPrompt,
+  });
+
+  const encoder = new TextEncoder();
+
+  const extractText = (chunk: unknown): string => {
+    if (!chunk || typeof chunk !== 'object') {
+      return '';
+    }
+
+    const candidateText = (candidate: any): string => {
+      if (!candidate) return '';
+      if (typeof candidate.text === 'string') return candidate.text;
+      if (candidate.content?.parts) {
+        return candidate.content.parts
+          .map((part: any) => (typeof part?.text === 'string' ? part.text : ''))
+          .join('');
+      }
+      return '';
+    };
+
+    if (typeof (chunk as any).text === 'string') {
+      return (chunk as any).text as string;
+    }
+
+    if (Array.isArray((chunk as any).candidates)) {
+      return (chunk as any).candidates.map(candidateText).join('');
+    }
+
+    if ((chunk as any).content?.parts) {
+      return (chunk as any).content.parts
+        .map((part: any) => (typeof part?.text === 'string' ? part.text : ''))
+        .join('');
+    }
+
+    return '';
+  };
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        for await (const chunk of streamIterator) {
+          const text = extractText(chunk);
+          if (text) {
+            controller.enqueue(encoder.encode(text));
+          }
+        }
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+  });
+}
+
 function isGeminiModel(model: string): boolean {
   return model.startsWith('gemini');
 }
@@ -413,6 +473,7 @@ async function executeAnalysis(
 export async function POST(req: NextRequest) {
   let responseText: string | null = null;
   let actualProvider: Provider = 'openai';
+  const streamRequested = req.nextUrl.searchParams.get('stream') === 'true';
   
   try {
     const input: AnalysisInput = await req.json();
@@ -442,6 +503,23 @@ Provide the complete JSON analysis now.`;
 
     const model = input.model || process.env.OPENAI_MODEL || 'gpt-4-turbo-preview';
     const provider = input.provider || 'openai';
+
+    if (streamRequested && (provider === 'gemini' || isGeminiModel(model))) {
+      const stream = await streamGeminiAnalysis(
+        model,
+        userMessage,
+        input.provider_api_key ?? null
+      );
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'no-cache',
+          'X-Analysis-Provider': 'gemini',
+          'Transfer-Encoding': 'chunked',
+        },
+      });
+    }
 
     const response = await executeAnalysis(
       provider,
