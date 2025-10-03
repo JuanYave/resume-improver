@@ -5,10 +5,9 @@
   "framework": "nextjs",
   "outputDirectory": ".next",
   "env": {
-    "OPENAI_API_KEY": "@openai-api-key"
   },
   "functions": {
-    "api/**/*.ts": {
+    "src/app/api/**/route.ts": {
       "maxDuration": 30
     }
   }
