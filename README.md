@@ -166,8 +166,7 @@ src/
 
 - `OPENAI_API_KEY`: Your OpenAI API key (required)
 - `OPENAI_MODEL`: Model to use (default: `gpt-4-turbo-preview`)
-- `ANALYZER_SHOW_DIAGNOSTIC_SCORES`: `true|false` flag to include diagnostic scoring in analysis prompts (default `true`)
-- `NEXT_PUBLIC_ANALYZER_SHOW_DIAGNOSTIC_SCORES`: Client-side mirror of the diagnostic score toggle
+- `ANALYZER_SHOW_DIAGNOSTIC_SCORES`: `true|false` flag to include diagnostic scoring in analysis prompts and results display (default `true`)
 
 ### Constraints
 

@@ -47,7 +47,7 @@ const ALLOWED_HTML_TAGS = new Set([
 ]);
 
 const SHOW_DIAGNOSTIC_SCORES =
-  (process.env.NEXT_PUBLIC_ANALYZER_SHOW_DIAGNOSTIC_SCORES ?? 'true').toLowerCase() === 'true';
+  (process.env.ANALYZER_SHOW_DIAGNOSTIC_SCORES ?? 'true').toLowerCase() === 'true';
 /**
  * Escapes AI-generated placeholder tags (e.g., <porcentaje>) so they render safely as text.
  * Known HTML tags remain untouched to preserve intentional markup.
@@ -253,11 +253,15 @@ export default function ResultsDisplay({ result, resumeText, provider, model, ap
       return [];
     }
 
-    return Object.entries(result.diagnostic.scores).map(([key, value]) => ({
-      key,
-      value,
-      label: t(`results.scores.${key}`),
-    }));
+    return Object.entries(result.diagnostic.scores).map(([key, rawValue]) => {
+      const scaledValue = rawValue <= 1 ? rawValue * 10 : rawValue;
+
+      return {
+        key,
+        value: scaledValue,
+        label: t(`results.scores.${key}`),
+      };
+    });
   }, [result.diagnostic.scores, t]);
 
   const safeImprovedMarkdown = useMemo(() => {
