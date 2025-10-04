@@ -38,7 +38,7 @@ async function extractErrorMessage(response: Response): Promise<string> {
     if (parsed && typeof parsed.error === 'string') {
       return parsed.error;
     }
-  } catch (error) {
+  } catch (_error) {
     return bodyText;
   }
 

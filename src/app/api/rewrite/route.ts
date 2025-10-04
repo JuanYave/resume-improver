@@ -8,12 +8,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import type { AnalysisInput, AnalysisPhaseResult, RewritePhaseResult, Provider } from '@/types';
+import { streamText } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import type { AnalysisInput, AnalysisPhaseResult, Provider } from '@/types';
 import {
   REWRITE_PHASE_PROMPT,
-  PhaseParseError,
   buildRewritePhaseMessage,
-  runPhase,
 } from '@/lib/analyzer';
 
 interface RewriteInput {
@@ -36,11 +37,13 @@ interface RewriteInput {
  * @async
  * @function POST
  * @param {NextRequest} req - Next.js request object containing RewriteInput JSON
- * @returns {Promise<NextResponse<RewritePhaseResult | {error: string}>>} JSON response with improved resume
+ * @returns {Promise<Response>} Streaming response with improved resume markdown JSON
  * 
  * @throws {Error} When API call fails
  * @throws {SyntaxError} When AI returns invalid JSON
  */
+
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   try {
@@ -60,9 +63,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const apiKey = input.provider_api_key ?? null;
     const provider = input.provider;
-    const model = input.model;
+    const modelId = input.model;
+    const apiKey = input.provider_api_key
+      ?? (provider === 'openai' ? process.env.OPENAI_API_KEY : process.env.GEMINI_API_KEY)
+      ?? null;
+
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: `Missing ${provider === 'openai' ? 'OpenAI' : 'Google Gemini'} API key` },
+        { status: 400 },
+      );
+    }
 
     // Build input object for rewrite phase
     const analysisInput: AnalysisInput = {
@@ -82,32 +94,27 @@ export async function POST(req: NextRequest) {
       },
     };
 
-    // Run rewrite phase
     const rewriteMessage = buildRewritePhaseMessage(analysisInput, input.analysis);
-    const { data: rewriteData } = await runPhase<RewritePhaseResult>({
-      phase: 'rewrite',
-      provider,
+
+    const model = provider === 'openai'
+      ? createOpenAI({ apiKey })(modelId)
+      : createGoogleGenerativeAI({ apiKey })(modelId);
+
+    const response = streamText({
       model,
-      systemPrompt: REWRITE_PHASE_PROMPT,
-      userMessage: rewriteMessage,
-      apiKey,
+      system: REWRITE_PHASE_PROMPT,
+      prompt: rewriteMessage,
+      temperature: 0.2,
+      maxOutputTokens: analysisInput.constraints?.max_output_tokens ?? 8000,
     });
 
-    return NextResponse.json(rewriteData);
+    return response.toTextStreamResponse({
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+      },
+    });
   } catch (error) {
-    if (error instanceof PhaseParseError) {
-      console.error(`${error.phase} phase parse failure`, {
-        phase: error.phase,
-        provider: error.provider,
-        message: error.originalError.message,
-      });
-
-      return NextResponse.json(
-        { error: `The ${error.phase} response was invalid JSON. Please retry.` },
-        { status: 502 },
-      );
-    }
-
     console.error('Resume rewrite failed', error);
 
     return NextResponse.json(

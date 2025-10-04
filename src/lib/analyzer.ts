@@ -27,6 +27,11 @@ export function isGeminiModel(model: string): boolean {
   return model.startsWith('gemini');
 }
 
+// Toggle diagnostic score inclusion at prompt-time so the LLM only produces the
+// heavy scoring block when `ANALYZER_SHOW_DIAGNOSTIC_SCORES` is true. Defaults to on.
+const includeDiagnosticScores =
+  (process.env.ANALYZER_SHOW_DIAGNOSTIC_SCORES ?? 'true').toLowerCase() === 'true';
+
 export const ANALYSIS_PHASE_PROMPT = `# Resume Analyzer – Analysis Phase v2.0
 
 You evaluate résumés and produce a succinct diagnostic JSON. Focus on accuracy and ATS alignment.
@@ -51,7 +56,7 @@ You evaluate résumés and produce a succinct diagnostic JSON. Focus on accuracy
     "achievements": ["string"]
   },
   "diagnostic": {
-    "scores": {
+${includeDiagnosticScores ? `    "scores": {
       "clarity": 0.0,
       "impact": 0.0,
       "ats_alignment": 0.0,
@@ -59,7 +64,7 @@ You evaluate résumés and produce a succinct diagnostic JSON. Focus on accuracy
       "role_fit": 0.0
     },
     "score_explanation": "string",
-    "strengths": ["string"],
+` : ''}    "strengths": ["string"],
     "gaps": ["string"],
     "risks": ["string"]
   },
@@ -94,29 +99,20 @@ You evaluate résumés and produce a succinct diagnostic JSON. Focus on accuracy
 - Return raw JSON only (no markdown fences).
 `;
 
-export const REWRITE_PHASE_PROMPT = `# Resume Analyzer – Rewrite Phase v2.0
+export const REWRITE_PHASE_PROMPT = `# Resume Analyzer – Rewrite Phase v2.1
 
-You craft improved résumés based on diagnostics already produced. Focus on clarity, impact, and ATS compliance.
+You craft an improved résumé in Markdown using previously generated diagnostics.
 
 ## Output JSON (rewrite phase)
 {
-  "improved_resume_markdown": "string (complete résumé in markdown)",
-  "changelog": [
-    {
-      "section": "string",
-      "change_type": "added | removed | modified | restructured",
-      "description": "string",
-      "original": "string",
-      "improved": "string"
-    }
-  ],
-  "next_steps": ["string"]
+  "improved_resume_markdown": "string (complete résumé in markdown)"
 }
 
 ## Rules
-- Preserve factual accuracy; use placeholders for missing data.
-- Markdown must be ATS-friendly: no tables, use headings and bullet lists.
-- Align tone and style with the provided rewrite criteria.
+- Preserve factual accuracy; prefer placeholders for unknown metrics.
+- Produce ATS-friendly Markdown: headings, bullet lists, no tables or HTML.
+- Align tone and structure with the provided rewrite criteria.
+- Return only the improved resume markdown. Omit changelog output.
 - Return raw JSON only (no markdown fences).
 `;
 
@@ -294,7 +290,7 @@ function repairOpenAIJson(text: string): string {
   try {
     JSON.parse(text);
     return text;
-  } catch (error) {
+  } catch (_error) {
     console.log('JSON parse failed, attempting repair...');
   }
 

@@ -43,8 +43,6 @@ export interface AnalysisPhaseResult {
 
 export interface RewritePhaseResult {
   improved_resume_markdown: AnalysisOutput['improved_resume_markdown'];
-  changelog: AnalysisOutput['changelog'];
-  next_steps: AnalysisOutput['next_steps'];
 }
 
 export interface ErrorDetail {
@@ -81,14 +79,14 @@ export interface AnalysisOutput {
     achievements: string[];
   };
   diagnostic: {
-    scores: {
+    scores?: {
       clarity: number;
       impact: number;
       ats_alignment: number;
       readability: number;
       role_fit: number;
     };
-    score_explanation: string;
+    score_explanation?: string;
     strengths: string[];
     gaps: string[];
     risks: string[];

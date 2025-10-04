@@ -14,7 +14,8 @@ A lightweight, AI-powered web application that analyzes résumés/CVs and provid
 - **Bilingual**: Support for English and Spanish résumés
 - **Regional Adaptation**: Formatted for USA or LATAM (Mexico) standards
 - **Keyword Helper**: Compares résumé against job descriptions and suggests truthful integrations
-- **Diagnostic Scores**: 5-dimensional evaluation (Clarity, Impact, ATS Alignment, Readability, Role Fit)
+- **Diagnostic Scores**: 5-dimensional evaluation (Clarity, Impact, ATS Alignment, Readability, Role Fit) that can be toggled via environment flags when not needed
+- **Streaming LLM Responses**: Resume rewrites and Canva design guides stream over SSE for faster feedback in the UI
 - **Safe Markdown Rendering**: Escapes unknown AI placeholders so React displays them as text without runtime warnings
 - **Privacy-Preserving**: No data storage, client-side processing where possible
 - **Bias-Aware**: Gender-neutral language, no demographic inferences
@@ -165,6 +166,8 @@ src/
 
 - `OPENAI_API_KEY`: Your OpenAI API key (required)
 - `OPENAI_MODEL`: Model to use (default: `gpt-4-turbo-preview`)
+- `ANALYZER_SHOW_DIAGNOSTIC_SCORES`: `true|false` flag to include diagnostic scoring in analysis prompts (default `true`)
+- `NEXT_PUBLIC_ANALYZER_SHOW_DIAGNOSTIC_SCORES`: Client-side mirror of the diagnostic score toggle
 
 ### Constraints
 

@@ -46,6 +46,8 @@ const ALLOWED_HTML_TAGS = new Set([
   'ul',
 ]);
 
+const SHOW_DIAGNOSTIC_SCORES =
+  (process.env.NEXT_PUBLIC_ANALYZER_SHOW_DIAGNOSTIC_SCORES ?? 'true').toLowerCase() === 'true';
 /**
  * Escapes AI-generated placeholder tags (e.g., <porcentaje>) so they render safely as text.
  * Known HTML tags remain untouched to preserve intentional markup.
@@ -61,6 +63,118 @@ function sanitizeMarkdownPlaceholders(markdown: string): string {
 
     return match.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
   });
+}
+
+function cleanModelJsonPayload(payload: string): string {
+  let cleaned = payload.trim();
+
+  if (cleaned.startsWith('```json')) {
+    cleaned = cleaned.slice(7);
+  } else if (cleaned.startsWith('```')) {
+    cleaned = cleaned.slice(3);
+  }
+
+  if (cleaned.endsWith('```')) {
+    cleaned = cleaned.slice(0, -3);
+  }
+
+  return cleaned.trim();
+}
+
+function normalizeStreamPayload(raw: string): string {
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => (line.startsWith('data:') ? line.slice(5).trim() : line))
+    .filter((line) => line && line !== '[DONE]')
+    .join('\n');
+}
+
+function extractJsonObjectContainingKey(source: string, key: string): string | null {
+  const keyToken = `"${key}"`;
+  const keyIndex = source.indexOf(keyToken);
+
+  if (keyIndex === -1) {
+    return null;
+  }
+
+  let start = keyIndex;
+  while (start >= 0 && source[start] !== '{') {
+    start -= 1;
+  }
+
+  if (start < 0) {
+    return null;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+
+      if (depth === 0) {
+        return source.slice(start, index + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+function parseStreamedJsonResponse<T>(raw: string, key: string): T {
+  const payload = normalizeStreamPayload(raw) || raw;
+  const cleanedCandidate = cleanModelJsonPayload(payload);
+  const jsonString = extractJsonObjectContainingKey(cleanedCandidate, key) ?? cleanedCandidate;
+
+  try {
+    return JSON.parse(jsonString) as T;
+  } catch (_error) {
+    throw new Error('Unable to parse streamed JSON payload');
+  }
+}
+
+function parseStreamedRewriteResponse(raw: string): string {
+  const parsed = parseStreamedJsonResponse<{ improved_resume_markdown?: string }>(
+    raw,
+    'improved_resume_markdown'
+  );
+
+  if (typeof parsed.improved_resume_markdown !== 'string') {
+    throw new Error('Rewrite payload missing improved resume content');
+  }
+
+  return parsed.improved_resume_markdown;
+}
+
+function parseStreamedCanvaGuideResponse(raw: string): CanvaGuide {
+  return parseStreamedJsonResponse<CanvaGuide>(raw, 'sections');
 }
 
 /**
@@ -110,11 +224,11 @@ export default function ResultsDisplay({ result, resumeText, provider, model, ap
   const [copiedSection, setCopiedSection] = useState<number | null>(null);
   const [rewriteLoading, setRewriteLoading] = useState(false);
   const [rewriteError, setRewriteError] = useState<string | null>(null);
-  const [rewriteResult, setRewriteResult] = useState<{ improved_resume_markdown: string; changelog: any[]; next_steps: string[] } | null>(
-    result.improved_resume_markdown ? { improved_resume_markdown: result.improved_resume_markdown, changelog: result.changelog || [], next_steps: result.next_steps || [] } : null
+  const [rewriteMarkdown, setRewriteMarkdown] = useState<string | null>(
+    result.improved_resume_markdown ?? null
   );
 
-  const hasImprovedResume = Boolean(rewriteResult?.improved_resume_markdown?.trim());
+  const hasImprovedResume = Boolean(rewriteMarkdown?.trim());
   const hasCanvaTab = hasImprovedResume;
 
   const tabs = useMemo(() => {
@@ -135,6 +249,10 @@ export default function ResultsDisplay({ result, resumeText, provider, model, ap
   }, [hasCanvaTab, activeTab]);
 
   const overviewScores = useMemo(() => {
+    if (!SHOW_DIAGNOSTIC_SCORES || !result.diagnostic.scores) {
+      return [];
+    }
+
     return Object.entries(result.diagnostic.scores).map(([key, value]) => ({
       key,
       value,
@@ -143,9 +261,9 @@ export default function ResultsDisplay({ result, resumeText, provider, model, ap
   }, [result.diagnostic.scores, t]);
 
   const safeImprovedMarkdown = useMemo(() => {
-    if (!rewriteResult?.improved_resume_markdown) return '';
-    return sanitizeMarkdownPlaceholders(rewriteResult.improved_resume_markdown);
-  }, [rewriteResult?.improved_resume_markdown]);
+    if (!rewriteMarkdown) return '';
+    return sanitizeMarkdownPlaceholders(rewriteMarkdown);
+  }, [rewriteMarkdown]);
 
   const getScoreColor = (score: number) => {
     if (score >= 8) return 'bg-green-100 text-green-800';
@@ -166,9 +284,9 @@ export default function ResultsDisplay({ result, resumeText, provider, model, ap
    * Shows "Copied!" feedback for 2 seconds
    */
   const handleCopy = async () => {
-    if (!rewriteResult?.improved_resume_markdown) return;
+    if (!rewriteMarkdown) return;
     try {
-      await navigator.clipboard.writeText(rewriteResult.improved_resume_markdown);
+      await navigator.clipboard.writeText(rewriteMarkdown);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
@@ -181,8 +299,8 @@ export default function ResultsDisplay({ result, resumeText, provider, model, ap
    * Creates blob and triggers browser download
    */
   const handleDownload = () => {
-    if (!rewriteResult?.improved_resume_markdown) return;
-    const blob = new Blob([rewriteResult.improved_resume_markdown], { type: 'text/markdown' });
+    if (!rewriteMarkdown) return;
+    const blob = new Blob([rewriteMarkdown], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -197,7 +315,7 @@ export default function ResultsDisplay({ result, resumeText, provider, model, ap
    * Generates improved resume (lazy loaded)
    */
   const generateImprovedResume = async () => {
-    if (rewriteResult) return; // Already generated
+    if (rewriteMarkdown) return; // Already generated
     
     setRewriteLoading(true);
     setRewriteError(null);
@@ -224,8 +342,9 @@ export default function ResultsDisplay({ result, resumeText, provider, model, ap
         throw new Error('Failed to generate improved resume');
       }
 
-      const data = await response.json();
-      setRewriteResult(data);
+      const raw = await response.text();
+      const markdown = parseStreamedRewriteResponse(raw);
+      setRewriteMarkdown(markdown);
     } catch (err) {
       setRewriteError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -249,7 +368,7 @@ export default function ResultsDisplay({ result, resumeText, provider, model, ap
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          improved_resume_markdown: rewriteResult?.improved_resume_markdown,
+          improved_resume_markdown: rewriteMarkdown,
           language: result.meta.language,
           provider: 'gemini', // Use Gemini for faster/cheaper response
           model: 'gemini-2.5-flash',
@@ -260,7 +379,8 @@ export default function ResultsDisplay({ result, resumeText, provider, model, ap
         throw new Error('Failed to generate Canva guide');
       }
 
-      const data: CanvaGuide = await response.json();
+      const raw = await response.text();
+      const data = parseStreamedCanvaGuideResponse(raw);
       setCanvaGuide(data);
     } catch (err) {
       setCanvaError(err instanceof Error ? err.message : 'An error occurred');
@@ -303,7 +423,7 @@ export default function ResultsDisplay({ result, resumeText, provider, model, ap
     markdown += '\n';
     
     // Sections
-    canvaGuide.sections.forEach((section: any, idx: number) => {
+    canvaGuide.sections.forEach((section: CanvaGuideSection, idx: number) => {
       markdown += `## Section ${idx + 1}: ${section.name}\n\n`;
       markdown += `**Placement:** ${section.placement}\n\n`;
       markdown += `**Font Size:** ${section.fontSize}\n\n`;
@@ -390,26 +510,32 @@ export default function ResultsDisplay({ result, resumeText, provider, model, ap
       {activeTab === 'overview' && (
         <div className="space-y-6">
           {/* Scores */}
-          <div className="card dark:bg-gray-800 dark:border-gray-700">
-            <h3 className="text-lg font-semibold mb-4 flex items-center text-gray-900 dark:text-white">
-              <TrendingUp className="w-5 h-5 mr-2" />
-              {t('results.scores')}
-            </h3>
-            <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">{result.diagnostic.score_explanation}</p>
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              {overviewScores.map((score) => (
-                <div key={score.key} className="text-center">
-                  <div className={`score-badge ${getScoreColor(score.value)} mb-2`}>
-                    {score.value.toFixed(1)}
+          {overviewScores.length > 0 && (
+            <div className="card dark:bg-gray-800 dark:border-gray-700">
+              <h3 className="text-lg font-semibold mb-4 flex items-center text-gray-900 dark:text-white">
+                <TrendingUp className="w-5 h-5 mr-2" />
+                {t('results.scores')}
+              </h3>
+              {result.diagnostic.score_explanation && (
+                <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                  {result.diagnostic.score_explanation}
+                </p>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                {overviewScores.map((score) => (
+                  <div key={score.key} className="text-center">
+                    <div className={`score-badge ${getScoreColor(score.value)} mb-2`}>
+                      {score.value.toFixed(1)}
+                    </div>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">
+                      {score.key.replace('_', ' ')}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{getScoreLabel(score.value)}</p>
                   </div>
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">
-                    {score.key.replace('_', ' ')}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{getScoreLabel(score.value)}</p>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Strengths */}
           <div className="card dark:bg-gray-800 dark:border-gray-700">
@@ -528,40 +654,7 @@ export default function ResultsDisplay({ result, resumeText, provider, model, ap
             ))}
           </div>
 
-          {/* Changelog */}
-          {rewriteResult?.changelog && rewriteResult.changelog.length > 0 && (
-          <div className="card dark:bg-gray-800 dark:border-gray-700">
-            <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">{t('results.changelog')}</h3>
-            <div className="space-y-3">
-              {rewriteResult.changelog.map((change, idx) => (
-                <div key={idx} className="border-l-4 border-primary-500 dark:border-primary-400 pl-4 py-2">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200 capitalize">{change.section}</span>
-                    <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded">
-                      {change.change_type}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">{change.description}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-          )}
-
-          {/* Next Steps */}
-          {rewriteResult?.next_steps && rewriteResult.next_steps.length > 0 && (
-          <div className="card bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
-            <h3 className="text-lg font-semibold mb-4 text-green-900 dark:text-green-300">{t('results.nextsteps')}</h3>
-            <ul className="space-y-2">
-              {rewriteResult.next_steps.map((step, idx) => (
-                <li key={idx} className="flex items-start">
-                  <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 mr-2 mt-0.5" />
-                  <span className="text-sm text-green-900 dark:text-green-200">{step}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          )}
+          {/* Improved résumé generation guidance now happens in the Improved tab */}
         </div>
       )}
 
@@ -569,7 +662,7 @@ export default function ResultsDisplay({ result, resumeText, provider, model, ap
       {activeTab === 'improved' && (
         <div className="space-y-4">
           {/* Generate Button (shown when not yet generated) */}
-          {!rewriteResult && !rewriteLoading && !rewriteError && (
+          {!rewriteMarkdown && !rewriteLoading && !rewriteError && (
             <div className="card dark:bg-gray-800 dark:border-gray-700 text-center py-12">
               <Sparkles className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
@@ -610,7 +703,7 @@ export default function ResultsDisplay({ result, resumeText, provider, model, ap
             </div>
           )}
 
-          {rewriteResult && (
+          {rewriteMarkdown && (
             <>
               {/* Action Buttons */}
               <div className="flex gap-3">

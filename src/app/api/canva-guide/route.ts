@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
-import { GoogleGenAI } from '@google/genai';
+import { streamText } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 
 interface CanvaGuideRequest {
   improved_resume_markdown: string;
@@ -29,22 +30,6 @@ export interface CanvaGuideOutput {
     heading: string;
     body: string;
   };
-}
-
-function getOpenAIClient(apiKey?: string | null) {
-  const key = apiKey || process.env.OPENAI_API_KEY;
-  if (!key) {
-    throw new Error('Missing OpenAI API key');
-  }
-  return new OpenAI({ apiKey: key });
-}
-
-function getGeminiClient(apiKey?: string | null) {
-  const key = apiKey || process.env.GEMINI_API_KEY;
-  if (!key) {
-    throw new Error('Missing Google Gemini API key');
-  }
-  return new GoogleGenAI({ apiKey: key });
 }
 
 const CANVA_PROMPT = `You are a professional CV designer helping users create beautiful, ATS-friendly resumes in Canva.
@@ -85,51 +70,12 @@ Return ONLY valid JSON with this exact structure:
   }
 }`;
 
-async function generateCanvaGuide(
-  provider: 'openai' | 'gemini',
-  model: string,
-  resumeMarkdown: string,
-  language: string,
-  apiKey?: string | null
-): Promise<string | null> {
-  const userMessage = `Generate a Canva design guide for this resume (output language: ${language}):\n\n${resumeMarkdown}`;
+export const maxDuration = 300;
 
-  if (provider === 'gemini') {
-    const client = getGeminiClient(apiKey);
-    const response = await client.models.generateContent({
-      model,
-      contents: `${CANVA_PROMPT}\n\n${userMessage}`,
-    });
-    return typeof response.text === 'string' ? response.text : null;
-  } else {
-    const client = getOpenAIClient(apiKey);
-    const completion = await client.chat.completions.create({
-      model,
-      messages: [
-        { role: 'system', content: CANVA_PROMPT },
-        { role: 'user', content: userMessage },
-      ],
-      temperature: 0.3,
-      max_tokens: 3000,
-      response_format: { type: 'json_object' },
-    });
-    return completion.choices[0]?.message?.content ?? null;
-  }
-}
-
-function cleanJsonResponse(text: string): string {
-  let cleaned = text.trim();
-  if (cleaned.startsWith('```json')) {
-    cleaned = cleaned.slice(7);
-  } else if (cleaned.startsWith('```')) {
-    cleaned = cleaned.slice(3);
-  }
-  if (cleaned.endsWith('```')) {
-    cleaned = cleaned.slice(0, -3);
-  }
-  return cleaned.trim();
-}
-
+/**
+ * Streams Canva design guide generation using the configured LLM provider.
+ * The response is returned as an SSE stream compatible with `useEffect`/`fetch` consumers.
+ */
 export async function POST(req: NextRequest) {
   try {
     const input: CanvaGuideRequest = await req.json();
@@ -141,38 +87,44 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const model = input.model || (input.provider === 'gemini' ? 'gemini-2.5-flash' : 'gpt-4-turbo-preview');
-    
-    let responseText = await generateCanvaGuide(
-      input.provider,
+    const provider = input.provider;
+    const modelId = input.model || (provider === 'gemini' ? 'gemini-2.5-flash' : 'gpt-4o-mini');
+    const apiKey =
+      input.provider_api_key ??
+      (provider === 'openai' ? process.env.OPENAI_API_KEY : process.env.GEMINI_API_KEY) ??
+      null;
+
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: `Missing ${provider === 'openai' ? 'OpenAI' : 'Google Gemini'} API key` },
+        { status: 400 }
+      );
+    }
+
+    const userPrompt = `Generate a Canva design guide for this resume (output language: ${input.language}):\n\n${input.improved_resume_markdown}`;
+
+    const model =
+      provider === 'openai'
+        ? createOpenAI({ apiKey })(modelId)
+        : createGoogleGenerativeAI({ apiKey })(modelId);
+
+    const response = streamText({
       model,
-      input.improved_resume_markdown,
-      input.language,
-      input.provider_api_key
-    );
+      system: CANVA_PROMPT,
+      prompt: userPrompt,
+      temperature: 0.2,
+      maxOutputTokens: 4000,
+    });
 
-    if (!responseText) {
-      throw new Error('Empty response from AI');
-    }
-
-    // Clean markdown code blocks if present (mainly for Gemini)
-    if (input.provider === 'gemini') {
-      responseText = cleanJsonResponse(responseText);
-    }
-
-    const result: CanvaGuideOutput = JSON.parse(responseText);
-
-    return NextResponse.json(result);
+    return response.toTextStreamResponse({
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+      },
+    });
 
   } catch (error) {
     console.error('Canva guide generation error:', error);
-    
-    if (error instanceof SyntaxError) {
-      return NextResponse.json(
-        { error: 'Invalid JSON response from AI' },
-        { status: 500 }
-      );
-    }
 
     return NextResponse.json(
       { error: 'Failed to generate Canva guide. Please try again.' },

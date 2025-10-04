@@ -81,14 +81,14 @@ const PROVIDERS: ProviderOption[] = [
   {
     value: 'openai',
     label: 'OpenAI',
-    description: 'GPT-5 (beta)',
+    description: 'GPT-4o Mini',
   },
 ];
 
 const MODEL_OPTIONS: ModelOption[] = [
   {
-    value: 'gpt-5-mini',
-    label: 'GPT-5 Mini (OpenAI)',
+    value: 'gpt-4o-mini',
+    label: 'GPT-4o Mini (OpenAI)',
     provider: 'openai',
     description: 'Modelo beta más reciente con API Responses',
   },
